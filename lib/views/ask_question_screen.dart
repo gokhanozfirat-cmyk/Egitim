@@ -78,10 +78,9 @@ class _AskQuestionScreenState extends ConsumerState<AskQuestionScreen> {
     });
 
     try {
-      final String imageUrl = await firebaseService.uploadQuestionImage(
-        imageFile: localImage,
-        userId: user.uid,
-      );
+      final String imageUrl = await ref
+          .read(supabaseStorageServiceProvider)
+          .uploadQuestionImage(imageFile: localImage, userId: user.uid);
 
       final aiSolution = await ref
           .read(aiTutorServiceProvider)

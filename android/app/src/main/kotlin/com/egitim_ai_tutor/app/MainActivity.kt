@@ -1,4 +1,4 @@
-package com.example.ai_tutor_app
+package com.egitim_ai_tutor.app
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -23,6 +23,17 @@ class Env {
   static const String googleServerClientId = String.fromEnvironment(
     'GOOGLE_SERVER_CLIENT_ID',
   );
+  static const String supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+  static const String supabaseAnonKey = String.fromEnvironment(
+    'SUPABASE_ANON_KEY',
+  );
+  static const String supabaseBucket = String.fromEnvironment(
+    'SUPABASE_BUCKET',
+    defaultValue: 'question-images',
+  );
+
+  static bool get hasSupabaseConfig =>
+      supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
 
   static AiProvider get aiProvider {
     if (aiProviderRaw.toLowerCase() == 'gemini') {

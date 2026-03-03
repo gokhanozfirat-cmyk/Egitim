@@ -1,11 +1,12 @@
 # AI Tutor App
 
-Kunduz-like mobile app built with Flutter + Firebase + AI services.
+Kunduz-like mobile app built with Flutter + Firebase + Supabase + AI services.
 
 ## Tech Stack
 
 - Flutter (Material 3)
-- Firebase Auth, Firestore, Storage
+- Firebase Auth + Firestore
+- Supabase Storage (question images)
 - Riverpod state management
 - OpenAI GPT-4o / Gemini 1.5 Pro integration
 - flutter_math_fork for LaTeX rendering
@@ -29,6 +30,7 @@ lib/
   services/
     ai_tutor_service.dart
     firebase_service.dart
+    supabase_storage_service.dart
   views/
     ask_question_screen.dart
     auth_gate.dart
@@ -47,14 +49,20 @@ lib/
 2. Enable Firebase Auth methods:
    - Email/Password
    - Google
-3. Create Firestore and Storage rules for authenticated users.
-4. Run with AI keys using `--dart-define`:
+3. Configure Supabase:
+   - Create a project
+   - Create a bucket named `question-images` (or use another name and pass `SUPABASE_BUCKET`)
+   - Set bucket to public (or adapt code for signed URLs)
+4. Run with env vars:
 
 ```bash
 flutter run ^
   --dart-define=AI_PROVIDER=openai ^
   --dart-define=OPENAI_API_KEY=YOUR_KEY ^
-  --dart-define=OPENAI_MODEL=gpt-4o
+  --dart-define=OPENAI_MODEL=gpt-4o ^
+  --dart-define=SUPABASE_URL=YOUR_SUPABASE_URL ^
+  --dart-define=SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY ^
+  --dart-define=SUPABASE_BUCKET=question-images
 ```
 
 Gemini option:
@@ -63,7 +71,10 @@ Gemini option:
 flutter run ^
   --dart-define=AI_PROVIDER=gemini ^
   --dart-define=GEMINI_API_KEY=YOUR_KEY ^
-  --dart-define=GEMINI_MODEL=gemini-1.5-pro
+  --dart-define=GEMINI_MODEL=gemini-1.5-pro ^
+  --dart-define=SUPABASE_URL=YOUR_SUPABASE_URL ^
+  --dart-define=SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY ^
+  --dart-define=SUPABASE_BUCKET=question-images
 ```
 
 Optional Google Sign-In overrides:

@@ -1,8 +1,5 @@
-import 'dart:io';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../core/config/env.dart';
@@ -12,16 +9,13 @@ class FirebaseService {
   FirebaseService({
     FirebaseAuth? auth,
     FirebaseFirestore? firestore,
-    FirebaseStorage? storage,
     GoogleSignIn? googleSignIn,
   }) : _auth = auth ?? FirebaseAuth.instance,
        _firestore = firestore ?? FirebaseFirestore.instance,
-       _storage = storage ?? FirebaseStorage.instance,
        _googleSignIn = googleSignIn ?? GoogleSignIn.instance;
 
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
-  final FirebaseStorage _storage;
   final GoogleSignIn _googleSignIn;
 
   Future<void>? _googleInitFuture;
@@ -85,21 +79,6 @@ class FirebaseService {
     if (_googleInitFuture != null) {
       await _googleSignIn.signOut();
     }
-  }
-
-  Future<String> uploadQuestionImage({
-    required File imageFile,
-    required String userId,
-  }) async {
-    final String fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-    final Reference ref = _storage
-        .ref()
-        .child('question_images')
-        .child(userId)
-        .child(fileName);
-
-    await ref.putFile(imageFile, SettableMetadata(contentType: 'image/jpeg'));
-    return ref.getDownloadURL();
   }
 
   Future<void> saveQuestion(Question question) async {

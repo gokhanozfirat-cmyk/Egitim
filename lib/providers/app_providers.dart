@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/question.dart';
 import '../services/ai_tutor_service.dart';
 import '../services/firebase_service.dart';
+import '../services/supabase_storage_service.dart';
 
 final firebaseServiceProvider = Provider<FirebaseService>((ref) {
   return FirebaseService();
@@ -11,6 +12,10 @@ final firebaseServiceProvider = Provider<FirebaseService>((ref) {
 
 final aiTutorServiceProvider = Provider<AiTutorService>((ref) {
   return AiTutorService();
+});
+
+final supabaseStorageServiceProvider = Provider<SupabaseStorageService>((ref) {
+  return SupabaseStorageService();
 });
 
 final authStateProvider = StreamProvider<User?>((ref) {
