@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/tutor_profile.dart';
+import '../widgets/question_share_fab.dart';
 
 class SubjectLessonsScreen extends StatelessWidget {
   const SubjectLessonsScreen({super.key, required this.profile});
@@ -11,6 +12,7 @@ class SubjectLessonsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('${profile.subject} Dersleri')),
+      floatingActionButton: const QuestionShareFab(heroTag: 'fab_lessons'),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[

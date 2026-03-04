@@ -24,9 +24,9 @@ class _AskQuestionScreenState extends ConsumerState<AskQuestionScreen> {
   bool _isSubmitting = false;
   String? _errorText;
 
-  Future<void> _captureAndCrop() async {
+  Future<void> _pickAndCrop(ImageSource source) async {
     final XFile? picked = await _picker.pickImage(
-      source: ImageSource.camera,
+      source: source,
       imageQuality: 92,
     );
     if (picked == null) {
@@ -159,10 +159,28 @@ class _AskQuestionScreenState extends ConsumerState<AskQuestionScreen> {
                 ),
               ],
               const SizedBox(height: 14),
-              OutlinedButton.icon(
-                onPressed: _isSubmitting ? null : _captureAndCrop,
-                icon: const Icon(Icons.camera_alt_outlined),
-                label: const Text('Capture question'),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _isSubmitting
+                          ? null
+                          : () => _pickAndCrop(ImageSource.camera),
+                      icon: const Icon(Icons.camera_alt_outlined),
+                      label: const Text('Kamera'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _isSubmitting
+                          ? null
+                          : () => _pickAndCrop(ImageSource.gallery),
+                      icon: const Icon(Icons.photo_library_outlined),
+                      label: const Text('Galeri'),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 10),
               FilledButton.icon(

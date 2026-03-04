@@ -11,7 +11,7 @@ class Env {
   static const String geminiApiKey = String.fromEnvironment('GEMINI_API_KEY');
   static const String openAiModel = String.fromEnvironment(
     'OPENAI_MODEL',
-    defaultValue: 'gpt-4o',
+    defaultValue: 'gpt-4o-mini',
   );
   static const String geminiModel = String.fromEnvironment(
     'GEMINI_MODEL',
@@ -30,6 +30,10 @@ class Env {
   static const String supabaseBucket = String.fromEnvironment(
     'SUPABASE_BUCKET',
     defaultValue: 'question-images',
+  );
+  static const bool requireLogin = bool.fromEnvironment(
+    'REQUIRE_LOGIN',
+    defaultValue: false,
   );
 
   static bool get hasSupabaseConfig =>

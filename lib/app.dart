@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'core/theme/app_theme.dart';
-import 'views/auth_gate.dart';
+import 'views/onboarding_screen.dart';
 
 class AiTutorApp extends StatelessWidget {
   const AiTutorApp({super.key});
@@ -12,7 +12,7 @@ class AiTutorApp extends StatelessWidget {
       title: 'AI Tutor',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      home: const AuthGate(),
+      home: const OnboardingScreen(),
     );
   }
 }
