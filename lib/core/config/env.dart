@@ -24,6 +24,9 @@ class Env {
     'GOOGLE_SERVER_CLIENT_ID',
   );
   static const String supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+  static const String supabasePublishableKey = String.fromEnvironment(
+    'SUPABASE_PUBLISHABLE_KEY',
+  );
   static const String supabaseAnonKey = String.fromEnvironment(
     'SUPABASE_ANON_KEY',
   );
@@ -36,8 +39,13 @@ class Env {
     defaultValue: false,
   );
 
+  static String get supabaseClientKey =>
+      supabasePublishableKey.isNotEmpty
+          ? supabasePublishableKey
+          : supabaseAnonKey;
+
   static bool get hasSupabaseConfig =>
-      supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
+      supabaseUrl.isNotEmpty && supabaseClientKey.isNotEmpty;
 
   static AiProvider get aiProvider {
     if (aiProviderRaw.toLowerCase() == 'gemini') {

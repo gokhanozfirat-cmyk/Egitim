@@ -1,0 +1,5 @@
+[functions.tutor-create-video]
+verify_jwt = false
+
+[functions.tutor-video-status]
+verify_jwt = false

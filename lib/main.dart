@@ -33,7 +33,7 @@ class _BootstrapAppState extends State<_BootstrapApp> {
       try {
         await Supabase.initialize(
           url: Env.supabaseUrl,
-          anonKey: Env.supabaseAnonKey,
+          anonKey: Env.supabaseClientKey,
         );
       } catch (error) {
         debugPrint('Supabase init skipped: $error');

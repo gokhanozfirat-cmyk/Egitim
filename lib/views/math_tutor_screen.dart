@@ -1,13 +1,11 @@
-import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:video_player/video_player.dart';
 
 import '../core/config/env.dart';
 import '../core/constants/math_topic_catalog.dart';
-import '../services/chatgpt_service.dart';
-import '../services/tutor_voice_service.dart';
+import '../services/avatar_tutor_service.dart';
 import '../widgets/question_share_fab.dart';
 
 class MathTutorScreen extends StatefulWidget {
@@ -24,53 +22,34 @@ class MathTutorScreen extends StatefulWidget {
   State<MathTutorScreen> createState() => _MathTutorScreenState();
 }
 
-class _MathTutorScreenState extends State<MathTutorScreen>
-    with SingleTickerProviderStateMixin {
-  final ChatGptService _chatGptService = ChatGptService();
-  final TutorVoiceService _voiceService = TutorVoiceService();
+class _MathTutorScreenState extends State<MathTutorScreen> {
+  final AvatarTutorService _avatarTutorService = AvatarTutorService();
   final TextEditingController _topicController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<_TutorMessage> _messages = <_TutorMessage>[];
 
-  late final AnimationController _mouthController;
   late final List<String> _topics;
 
+  VideoPlayerController? _videoController;
   bool _sending = false;
-  bool _speaking = false;
+  bool _videoPreparing = false;
   bool _chalkMode = true;
   String? _activeTopic;
   String? _lastApiError;
-  String _tutorAssetPath = 'assets/tutors/Geometri Man.png';
-  TutorVoiceGender _tutorVoiceGender = TutorVoiceGender.male;
+  String? _videoError;
 
   @override
   void initState() {
     super.initState();
     _topics = MathTopicCatalog.topicsForExam(widget.examName);
-    _mouthController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 220),
-    );
-    _resolveTutorAsset();
   }
 
   @override
   void dispose() {
-    _voiceService.stop();
-    _mouthController.dispose();
+    _videoController?.dispose();
     _topicController.dispose();
     _scrollController.dispose();
     super.dispose();
-  }
-
-  String get _systemPrompt {
-    final String topicFocus = (_activeTopic ?? '').trim();
-    return 'Sen ogrenciye matematik anlatan profesyonel AI egitmensin. '
-        'Dil Turkce. Uslup net ve adim adim olsun. '
-        'Her yeni konuda once "Alt Basliklar" listesini cikar. '
-        'Ardindan o alt basliklari kolaydan zora anlat ve mini kontrol sorusu sor. '
-        'Sinav: ${widget.examName}. Brans: ${widget.subjectName}. '
-        '${topicFocus.isEmpty ? '' : 'Aktif konu: $topicFocus. Cevaplari bu konuya odakla.'}';
   }
 
   Future<void> _sendPrompt({String? presetTopic}) async {
@@ -79,11 +58,14 @@ class _MathTutorScreenState extends State<MathTutorScreen>
       return;
     }
 
+    if (presetTopic != null) {
+      _activeTopic = presetTopic;
+    }
+
     setState(() {
-      if (presetTopic != null) {
-        _activeTopic = presetTopic;
-      }
       _sending = true;
+      _videoPreparing = true;
+      _videoError = null;
       _messages.add(_TutorMessage(role: 'user', text: input));
       if (presetTopic != null) {
         _topicController.text = presetTopic;
@@ -91,57 +73,107 @@ class _MathTutorScreenState extends State<MathTutorScreen>
     });
     _scrollToBottom();
 
-    String response;
     try {
-      if (Env.openAiApiKey.isEmpty && Env.geminiApiKey.isEmpty) {
-        response = _buildOfflineTutorResponse(input);
-        _lastApiError =
-            'OPENAI_API_KEY yok. Demo yanit acik. Gercek cevap icin: '
-            'flutter run --dart-define=OPENAI_API_KEY=...';
-      } else {
-        response = await _chatGptService.askConversation(
-          systemPrompt: _systemPrompt,
-          messages: _messages
-              .map((m) => <String, String>{'role': m.role, 'content': m.text})
-              .toList(),
+      if (!Env.hasSupabaseConfig) {
+        throw StateError(
+          'Supabase baglantisi eksik. Run icin SUPABASE_URL ve SUPABASE_PUBLISHABLE_KEY ver.',
         );
-        _lastApiError = null;
       }
-    } catch (error) {
-      // API hatasinda akisi kesmemek icin yerel anlatima dus.
-      response = _buildOfflineTutorResponse(input);
-      _lastApiError = '$error';
-    }
 
-    if (!mounted) {
-      return;
+      final List<Map<String, String>> conversationHistory = _messages
+          .map((m) => <String, String>{'role': m.role, 'content': m.text})
+          .toList();
+
+      final job = await _avatarTutorService.createVideo(
+        examName: widget.examName,
+        subjectName: widget.subjectName,
+        activeTopic: _activeTopic,
+        userMessage: input,
+        conversationHistory: conversationHistory,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _messages.add(_TutorMessage(role: 'assistant', text: job.answerText));
+        _lastApiError = null;
+        _topicController.clear();
+        _sending = false;
+      });
+      _scrollToBottom();
+
+      final status = await _avatarTutorService.waitUntilDone(job.jobId);
+      if (!mounted) {
+        return;
+      }
+
+      if (status.isDone && status.videoUrl != null) {
+        await _loadVideo(status.videoUrl!);
+        return;
+      }
+
+      setState(() {
+        _videoPreparing = false;
+        _videoError =
+            status.errorMessage ?? 'Avatar videosu hazirlanamadi. Tekrar dene.';
+      });
+    } catch (error) {
+      final String fallback = _buildOfflineTutorResponse(input);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _messages.add(_TutorMessage(role: 'assistant', text: fallback));
+        _lastApiError = '$error';
+        _videoError = 'D-ID avatar videosu olusturulamadi.';
+        _videoPreparing = false;
+        _sending = false;
+        _topicController.clear();
+      });
+      _scrollToBottom();
     }
-    setState(() {
-      _messages.add(_TutorMessage(role: 'assistant', text: response));
-      _topicController.clear();
-      _sending = false;
-    });
-    _scrollToBottom();
-    await _speak(response);
   }
 
-  Future<void> _speak(String text) async {
-    if (text.trim().isEmpty) {
-      return;
+  Future<void> _loadVideo(String videoUrl) async {
+    final VideoPlayerController? previousController = _videoController;
+
+    if (previousController != null) {
+      await previousController.pause();
     }
 
-    setState(() => _speaking = true);
-    _mouthController.repeat(reverse: true);
+    final VideoPlayerController controller = VideoPlayerController.networkUrl(
+      Uri.parse(videoUrl),
+    );
+
     try {
-      await _voiceService.speak(text, gender: _tutorVoiceGender);
-    } catch (_) {
-      // TTS unavailable case.
-    } finally {
-      if (mounted) {
-        _mouthController.stop();
-        _mouthController.value = 0;
-        setState(() => _speaking = false);
+      await controller.initialize();
+      await controller.setLooping(false);
+      await controller.play();
+
+      if (!mounted) {
+        await controller.dispose();
+        return;
       }
+
+      setState(() {
+        _videoController = controller;
+        _videoPreparing = false;
+        _videoError = null;
+      });
+      await previousController?.dispose();
+    } catch (error) {
+      await controller.dispose();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _videoPreparing = false;
+        _videoError = 'Video oynatilamadi: $error';
+      });
     }
   }
 
@@ -158,21 +190,21 @@ class _MathTutorScreenState extends State<MathTutorScreen>
     if (looksLikeQuestion) {
       return 'Soru: $topic\n'
           'Konu: $scopedTopic\n\n'
-          'Hizli Yanit:\n'
-          '- Sorunu bu konuda adim adim cozelim.\n'
-          '- Once verilenleri yaz, sonra bilinmeyeni belirle.\n'
-          '- Uygun kurali sec ve islem adimlarini tek tek uygula.\n'
-          '- Sonucu kontrol ederek bitir.\n\n'
-          'Istersen sorunu buraya tam metin olarak yaz, ben tek tek cozumunu cikarayim.';
+          'Hizli yontem:\n'
+          '- Verilenleri yaz.\n'
+          '- Hangi kurali kullanacagini belirle.\n'
+          '- Islem sirasini koru.\n'
+          '- Sonucu kontrol et.\n\n'
+          'Supabase function deploy edilince avatar bunu video olarak da anlatacak.';
     }
 
     return 'Konu secildi: $scopedTopic\n\n'
-        'Alt Basliklar:\n'
+        'Alt basliklar:\n'
         '1) Temel kavramlar\n'
-        '2) Soru cozme adimlari\n'
-        '3) SIK yapilan hatalar\n'
-        '4) Yeni nesil soru taktigi\n\n'
-        'Simdi bu konuda istedigin soruyu yaz, direkt cevaplayayim.';
+        '2) Cikis soru tipleri\n'
+        '3) Sik yapilan hatalar\n'
+        '4) Yeni nesil soru yaklasimi\n\n'
+        'Functionlar deploy edilince bu metin Gemini ile uretilecek ve D-ID avatari sesli anlatacak.';
   }
 
   void _scrollToBottom() {
@@ -186,80 +218,6 @@ class _MathTutorScreenState extends State<MathTutorScreen>
         curve: Curves.easeOut,
       );
     });
-  }
-
-  String _normalizeForMatch(String value) {
-    return value
-        .toLowerCase()
-        .replaceAll('ı', 'i')
-        .replaceAll('ğ', 'g')
-        .replaceAll('ü', 'u')
-        .replaceAll('ş', 's')
-        .replaceAll('ö', 'o')
-        .replaceAll('ç', 'c')
-        .replaceAll('â', 'a')
-        .replaceAll('î', 'i')
-        .replaceAll('û', 'u');
-  }
-
-  TutorVoiceGender _detectGenderFromPath(String path) {
-    final String lower = path.toLowerCase();
-    if (lower.contains('woman') ||
-        lower.contains('women') ||
-        lower.contains('female') ||
-        lower.contains('kadin')) {
-      return TutorVoiceGender.female;
-    }
-    if (lower.contains('man') ||
-        lower.contains('male') ||
-        lower.contains('erkek')) {
-      return TutorVoiceGender.male;
-    }
-    return TutorVoiceGender.neutral;
-  }
-
-  Future<void> _resolveTutorAsset() async {
-    try {
-      final String manifestRaw = await rootBundle.loadString(
-        'AssetManifest.json',
-      );
-      final Map<String, dynamic> manifest =
-          jsonDecode(manifestRaw) as Map<String, dynamic>;
-      final List<String> tutorAssets = manifest.keys
-          .where((String path) => path.startsWith('assets/tutors/'))
-          .toList();
-
-      final String subject = _normalizeForMatch(widget.subjectName);
-      String? match;
-
-      // Try exact math tutor first.
-      if (subject.contains('matematik')) {
-        match = tutorAssets.firstWhere(
-          (String p) => _normalizeForMatch(p).contains('matematik'),
-          orElse: () => '',
-        );
-      }
-
-      // Fallbacks for math branch.
-      if (match == null || match.isEmpty) {
-        match = tutorAssets.firstWhere(
-          (String p) => _normalizeForMatch(p).contains('geometri'),
-          orElse: () => '',
-        );
-      }
-
-      if (!mounted) {
-        return;
-      }
-      if (match.isNotEmpty) {
-        setState(() {
-          _tutorAssetPath = match!;
-          _tutorVoiceGender = _detectGenderFromPath(match);
-        });
-      }
-    } catch (_) {
-      // Keep default tutor asset and voice.
-    }
   }
 
   TextStyle _chalkTextStyle({
@@ -295,9 +253,9 @@ class _MathTutorScreenState extends State<MathTutorScreen>
       floatingActionButton: const QuestionShareFab(heroTag: 'fab_math_tutor'),
       body: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
-          final double tutorHeight = math.min(
-            240,
-            math.max(140, constraints.maxHeight * 0.28),
+          final double videoHeight = math.min(
+            270,
+            math.max(150, constraints.maxHeight * 0.33),
           );
           const double composerHeight = 140;
 
@@ -364,7 +322,7 @@ class _MathTutorScreenState extends State<MathTutorScreen>
                           child: ListView.separated(
                             controller: _scrollController,
                             padding: EdgeInsets.only(
-                              bottom: tutorHeight + composerHeight + 24,
+                              bottom: videoHeight + composerHeight + 24,
                             ),
                             itemCount: _messages.length,
                             separatorBuilder: (_, _) =>
@@ -419,12 +377,12 @@ class _MathTutorScreenState extends State<MathTutorScreen>
               Positioned(
                 left: 10,
                 bottom: composerHeight + 16,
-                child: _TutorCharacter(
-                  speaking: _speaking,
-                  mouthAnimation: _mouthController,
-                  height: tutorHeight,
+                child: _AvatarVideoCard(
+                  height: videoHeight,
                   chalkMode: _chalkMode,
-                  assetPath: _tutorAssetPath,
+                  videoController: _videoController,
+                  preparing: _videoPreparing,
+                  errorText: _videoError,
                 ),
               ),
               Positioned(
@@ -500,74 +458,110 @@ class _GridPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class _TutorCharacter extends StatelessWidget {
-  const _TutorCharacter({
-    required this.speaking,
-    required this.mouthAnimation,
+class _AvatarVideoCard extends StatelessWidget {
+  const _AvatarVideoCard({
     required this.height,
     required this.chalkMode,
-    required this.assetPath,
+    required this.videoController,
+    required this.preparing,
+    required this.errorText,
   });
 
-  final bool speaking;
-  final AnimationController mouthAnimation;
   final double height;
   final bool chalkMode;
-  final String assetPath;
+  final VideoPlayerController? videoController;
+  final bool preparing;
+  final String? errorText;
 
   @override
   Widget build(BuildContext context) {
+    final double width = height * 0.66;
+
     return SizedBox(
-      width: height * 0.72,
+      width: width,
       height: height,
       child: Card(
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
         elevation: chalkMode ? 0 : 3,
-        color: chalkMode ? const Color(0x44102823) : null,
+        color: chalkMode ? const Color(0x44102823) : Colors.white,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(
-            color: chalkMode ? const Color(0x66C4E6D6) : Colors.transparent,
+            color: chalkMode ? const Color(0x66C4E6D6) : const Color(0xFFD8DFE8),
           ),
         ),
         child: Stack(
-          alignment: Alignment.bottomCenter,
+          fit: StackFit.expand,
           children: <Widget>[
-            Positioned.fill(
-              child: Image.asset(
-                assetPath,
+            if (videoController != null && videoController!.value.isInitialized)
+              FittedBox(
                 fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => Image.asset(
-                  'assets/tutors/Geometri Man.png',
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const ColoredBox(
-                    color: Color(0xFFE5EDF6),
-                    child: Center(child: Icon(Icons.person, size: 56)),
+                child: SizedBox(
+                  width: videoController!.value.size.width,
+                  height: videoController!.value.size.height,
+                  child: VideoPlayer(videoController!),
+                ),
+              )
+            else
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: chalkMode
+                        ? const <Color>[
+                            Color(0xFF163B35),
+                            Color(0xFF0F2622),
+                          ]
+                        : const <Color>[
+                            Color(0xFFF0F5FB),
+                            Color(0xFFE0E8F3),
+                          ],
+                  ),
+                ),
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      preparing
+                          ? 'Alyssa avatar videosu hazirlaniyor...'
+                          : 'Avatar yaniti burada oynatilacak.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: chalkMode
+                            ? const Color(0xFFF4FAF1)
+                            : const Color(0xFF223647),
+                        fontWeight: FontWeight.w700,
+                        fontFamily: chalkMode ? 'monospace' : null,
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-            Positioned(
-              bottom: 22,
-              child: AnimatedBuilder(
-                animation: mouthAnimation,
-                builder: (_, child) {
-                  final double h = speaking
-                      ? 7 + (mouthAnimation.value * 10)
-                      : 6;
-                  return Container(
-                    width: 24,
-                    height: h,
-                    decoration: BoxDecoration(
-                      color: const Color(0xB3222222),
-                      borderRadius: BorderRadius.circular(30),
-                      border: Border.all(color: Colors.white70),
+            if (preparing)
+              const Center(child: CircularProgressIndicator()),
+            if ((errorText ?? '').isNotEmpty)
+              Positioned(
+                left: 8,
+                right: 8,
+                bottom: 8,
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xD8452323),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    errorText!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
                     ),
-                  );
-                },
+                  ),
+                ),
               ),
-            ),
           ],
         ),
       ),
@@ -602,7 +596,7 @@ class _ComposerBar extends StatelessWidget {
                   ? const Color(0x33000000)
                   : const Color(0x22000000),
               blurRadius: 8,
-              offset: Offset(0, -2),
+              offset: const Offset(0, -2),
             ),
           ],
         ),
@@ -614,9 +608,6 @@ class _ComposerBar extends StatelessWidget {
                   inputDecorationTheme: InputDecorationTheme(
                     hintStyle: TextStyle(
                       color: chalkMode ? const Color(0xB3E7F7EC) : null,
-                    ),
-                    labelStyle: TextStyle(
-                      color: chalkMode ? const Color(0xE6F4FBF2) : null,
                     ),
                     filled: true,
                     fillColor: chalkMode

@@ -1,0 +1,20 @@
+export const corsHeaders: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
+export function jsonResponse(
+  payload: unknown,
+  init: ResponseInit = {},
+): Response {
+  return new Response(JSON.stringify(payload), {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...corsHeaders,
+      ...(init.headers ?? {}),
+    },
+  });
+}
